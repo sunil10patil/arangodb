@@ -301,6 +301,22 @@ jobs:
           destination: hotbackup-test
           path: /tmp/test-workdir
 
+  run-cppcheck:
+    docker:
+      - image: alpine:3.17
+    resource_class: small
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Install cppcheck
+          command: |
+            apk add --no-cache cppcheck
+      - run:
+          name: Run cppcheck
+          command: |
+            utils/cppcheck.sh
+
 workflows:
   lint:
     jobs:
@@ -316,6 +332,14 @@ workflows:
             - minimal-checkout
       - eslint:
           name: eslint
+          requires:
+            - minimal-checkout
+  cppcheck:
+    jobs:
+      - minimal-checkout:
+          name: minimal-checkout
+      - run-cppcheck:
+          name: cppcheck
           requires:
             - minimal-checkout
   community-pr:
