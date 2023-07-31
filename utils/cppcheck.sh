@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
 ferr() { echo "$*"; exit 1; }
 
