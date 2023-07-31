@@ -303,7 +303,7 @@ jobs:
 
   run-cppcheck:
     docker:
-      - image: alpine:3.17
+      - image: cimg/base:2023.07
     resource_class: small
     steps:
       - attach_workspace:
@@ -311,7 +311,7 @@ jobs:
       - run:
           name: Install cppcheck
           command: |
-            apk add --no-cache cppcheck
+            sudo apt-get update && sudo apt-get install -y cppcheck
       - run:
           name: Run cppcheck
           command: |
