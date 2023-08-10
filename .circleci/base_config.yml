@@ -1,5 +1,8 @@
 version: 2.1
 
+orbs:
+  win: circleci/windows@5.0
+
 parameters:
   enterprise-branch:
     type: string
@@ -7,14 +10,50 @@ parameters:
   default-enterprise-branch:
     type: string
     default: "devel"
+  build-targets:
+    type: string
+    default: "arangod arangosh arangoimport arangoexport arangodump arangorestore arangobench"
+  test-build-targets:
+    type: string
+    default: "arangodbtests fuertetest"
+  enterprise-build-targets:
+    type: string
+    default: "arangobackup"
 
 commands:
+  checkout-arangodb:
+    parameters:
+      destination:
+        type: string
+      with-submodules:
+        type: boolean
+    steps:
+      - run:
+          name: Checkout ArangoDB
+          command: |
+            mkdir -p << parameters.destination >>
+            cd << parameters.destination >>
+            echo << pipeline.git.revision >>
+            git init
+            git remote add origin https://github.com/arangodb/arangodb.git
+            echo "Fetching stuff"
+            git fetch --depth 1 origin << pipeline.git.revision >>
+            git checkout << pipeline.git.revision >>
+      - when:
+          condition: << parameters.with-submodules >>
+          steps:
+            - run:
+                name: "Checkout submodules"
+                command: |
+                  cd << parameters.destination >>
+                  git submodule init
+                  git submodule update --recursive --depth 1 --jobs 8
+
   checkout-enterprise:
     description: "Checkout enterprise code"
     parameters:
       destination:
         type: string
-        default: ""
     steps:
       - add_ssh_keys:
           fingerprints:
@@ -46,13 +85,9 @@ jobs:
     environment:
       GIT_SSH_COMMAND: ssh -v
     steps:
-      - run:
-          name: Checkout
-          command: |
-            git init
-            git remote add origin https://github.com/arangodb/arangodb.git
-            git fetch --depth 1 origin $CIRCLE_SHA1
-            git checkout $CIRCLE_SHA1
+      - checkout-arangodb:
+          with-submodules: false
+          destination: "/home/circleci/project"
       - checkout-enterprise:
           destination: "/home/circleci/project/enterprise"
       - persist_to_workspace:
@@ -139,11 +174,8 @@ jobs:
         type: string
       enterprise:
         type: boolean
-      targets:
-        type: string
-      enterprise-targets:
-        type: string
-        default: ""
+      build-tests:
+        type: boolean
       publish-artifacts:
         type: boolean
         default: true
@@ -155,16 +187,10 @@ jobs:
       SCCACHE_ERROR_LOG: /tmp/sccache.log
       SCCACHE_LOG: info,sccache::cache=debug,sccache::compiler::compiler=debug
     steps:
-      - run:
-          name: Checkout ArangoDB
-          command: |
-            mkdir /root/project && cd /root/project
-            git init
-            git remote add origin https://github.com/arangodb/arangodb.git
-            git fetch --depth 1 origin $CIRCLE_SHA1
-            git checkout $CIRCLE_SHA1
-            git submodule init
-            git submodule update --recursive --depth 1 --jobs 8
+      - run: mkdir /root/project && cd /root/project
+      - checkout-arangodb:
+          with-submodules: true
+          destination: "/root/project"
       - when:
           condition: << parameters.enterprise >>
           steps:
@@ -180,9 +206,12 @@ jobs:
       - run:
           name: Build
           command: |
-            TARGETS="<< parameters.targets >>"
+            TARGETS="<< pipeline.parameters.build-targets >>"
             if [ << parameters.enterprise >> = true ]; then
-              TARGETS="$TARGETS << parameters.enterprise-targets >>"
+              TARGETS="$TARGETS << pipeline.parameters.enterprise-build-targets >>"
+            fi
+            if [ << parameters.build-tests >> = true ]; then
+              TARGETS="$TARGETS << pipeline.parameters.test-build-targets >>"
             fi
             echo "Building targets: $TARGETS"
             cmake --build --preset << parameters.preset >> --parallel 8 --target $TARGETS
@@ -220,6 +249,109 @@ jobs:
                   - UnitTests
                   - 3rdParty/iresearch/tests/resources
                   - 3rdParty/rta-makedata
+
+  compile-windows:
+    parameters:
+      preset:
+        type: string
+      edition:
+        type: string
+      build-tests:
+        type: boolean
+      publish-artifacts:
+        type: boolean
+        default: true
+    executor:
+      name: win/default
+      size: 2xlarge
+      shell: bash.exe
+      version: "2022.08.1"
+    environment:
+      GIT_SSH_COMMAND: ssh
+      SCCACHE_ERROR_LOG: /tmp/sccache.log
+      SCCACHE_LOG: info,sccache::cache=debug,sccache::compiler::compiler=debug
+    steps:
+      - checkout-arangodb:
+          with-submodules: true
+          destination: "C:/root/project"
+      # for windows we build only enterprise, so we can check it out unconditionally
+      - checkout-enterprise:
+          destination: "C:/root/project/enterprise"
+      # - run:
+      #     name: Print SCCache Settings
+      #     command: sccache -s
+      - run:
+          name: "Install CMake"
+          shell: powershell.exe
+          command: |
+            choco install cmake openssl -y
+      - run:
+          name: "Configure"
+          shell: powershell.exe
+          command: |
+            #docker info
+            # TODO - use preset
+            #docker run -v C:/root/project:C:/project -w C:/project arangodb/build-windows-x64:latest cmd.exe /c "mkdir build && cd build && cmake -G 'Visual Studio 17 2022' -T 'v143,host=x64' -DVERBOSE=On -DUSE_MAINTAINER_MODE=On -DUSE_GOOGLE_TESTS=On -DUSE_ENTERPRISE=Off -DCMAKE_BUILD_TYPE=RelWithDebInfo -DPACKAGING=NSIS -DCMAKE_INSTALL_PREFIX=/ -DSKIP_PACKAGING=On -DUSE_FAILURE_TESTS=On -DSTATIC_EXECUTABLES=On -DOPENSSL_USE_STATIC_LIBS=On -DUSE_STRICT_OPENSSL_VERSION=On .."
+            $env:Path += ";$env:ProgramFiles\CMake\bin"
+            cd C:/root/project
+            mkdir build; cd build
+            cmake -G 'Visual Studio 17 2022' -T 'v143,host=x64' -DVERBOSE=On -DUSE_MAINTAINER_MODE=On -DUSE_GOOGLE_TESTS=On -DUSE_ENTERPRISE=Off -DCMAKE_BUILD_TYPE=RelWithDebInfo -DPACKAGING=NSIS -DCMAKE_INSTALL_PREFIX=/ -DSKIP_PACKAGING=On -DUSE_FAILURE_TESTS=On -DSTATIC_EXECUTABLES=On -DOPENSSL_USE_STATIC_LIBS=On -DUSE_STRICT_OPENSSL_VERSION=Off "-DOPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" ..
+      - run:
+          name: "Build"
+          shell: powershell.exe
+          command: |
+            $env:Path += ";$env:ProgramFiles\CMake\bin"
+            cd C:/root/project/build
+            cmake --build . --config `"RelWithDebInfo`" --parallel
+
+      # - run:
+      #     name: Configure
+      #     command: |
+      #       cmake --preset << parameters.preset >> -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld" -DCMAKE_LIBRARY_PATH=$OPENSSL_ROOT_DIR/lib
+      # - run:
+      #     name: Build
+      #     command: |
+      #       TARGETS="<< pipeline.parameters.build-targets >>"
+      #       TARGETS="$TARGETS << pipeline.parameters.enterprise-build-targets >>"
+      #       if [ << parameters.build-tests >> = true ]; then
+      #         TARGETS="$TARGETS << pipeline.parameters.test-build-targets >>"
+      #       fi
+      #       echo "Building targets: $TARGETS"
+      #       cmake --build --preset << parameters.preset >> --parallel 8 --target $TARGETS
+      # - run:
+      #     name: Size leaderboard
+      #     command: |
+      #       ls -Ssha build/bin/*.a
+      # - run:
+      #     name: Cleanup build directory
+      #     command: |
+      #       find build/ -iname *.a -delete || true
+      #       find build/ -iname *.o -delete || true
+      # - run:
+      #     name: SCCache Statistics
+      #     command: sccache -s
+      # - store_artifacts:
+      #     path: /tmp/sccache.log
+      # - when:
+      #     condition: << parameters.publish-artifacts >>
+      #     steps:
+      #       - store_artifacts:
+      #           path: build/bin/arango*
+      #       - persist_to_workspace:
+      #           root: .
+      #           paths:
+      #             - CMakePresets.json
+      #             - build/
+      #             - scripts/
+      #             - js/
+      #             - enterprise/js
+      #             - etc/
+      #             - tests/js
+      #             - enterprise/tests/js
+      #             - utils
+      #             - UnitTests
+      #             - 3rdParty/iresearch/tests/resources
+      #             - 3rdParty/rta-makedata
 
   run-tests:
     docker:
@@ -302,63 +434,70 @@ jobs:
           path: /tmp/test-workdir
 
 workflows:
-  lint:
+  # lint:
+  #   jobs:
+  #     - minimal-checkout:
+  #         name: minimal-checkout
+  #     - check-log-ids:
+  #         name: check-log-ids
+  #         requires:
+  #           - minimal-checkout
+  #     - clang-format:
+  #         name: clang-format
+  #         requires:
+  #           - minimal-checkout
+  #     - eslint:
+  #         name: eslint
+  #         requires:
+  #           - minimal-checkout
+  # community-pr:
+  #   jobs:
+  #     - compile-linux:
+  #         context:
+  #           - sccache-aws-bucket # add the environment variables to setup sccache for the S3 bucket
+  #         name: build-ce
+  #         preset: community-pr
+  #         edition: x64-community
+  #         enterprise: false
+  #         build-tests: true
+  #     - compile-linux:
+  #         context:
+  #           - sccache-aws-bucket # add the environment variables to setup sccache for the S3 bucket
+  #         name: build-ce-non-maintainer
+  #         preset: community-pr-non-maintainer
+  #         edition: x64-community
+  #         enterprise: false
+  #         build-tests: false
+  #         publish-artifacts: false
+  # enterprise-pr:
+  #   jobs:
+  #     - compile-linux:
+  #         context:
+  #           - sccache-aws-bucket # add the environment variables to setup sccache for the S3 bucket
+  #         name: build-ee
+  #         preset: enterprise-pr
+  #         edition: x64-enterprise
+  #         enterprise: true
+  #         build-tests: false
+  #     - compile-linux:
+  #         context:
+  #           - sccache-aws-bucket # add the environment variables to setup sccache for the S3 bucket
+  #         name: build-ee-non-maintainer
+  #         preset: enterprise-pr-non-maintainer
+  #         edition: x64-enterprise
+  #         enterprise: true
+  #         build-tests: false
+  #         publish-artifacts: false
+  #     - run-hotbackup-tests:
+  #         name: run-hotbackup-tests
+  #         requires:
+  #           - build-ee
+  windows-enterprise-pr:
     jobs:
-      - minimal-checkout:
-          name: minimal-checkout
-      - check-log-ids:
-          name: check-log-ids
-          requires:
-            - minimal-checkout
-      - clang-format:
-          name: clang-format
-          requires:
-            - minimal-checkout
-      - eslint:
-          name: eslint
-          requires:
-            - minimal-checkout
-  community-pr:
-    jobs:
-      - compile-linux:
-          context:
-            - sccache-aws-bucket # add the environment variables to setup sccache for the S3 bucket
-          name: build-ce
-          preset: community-pr
-          edition: x64-community
-          enterprise: false
-          targets: "arangodbtests arangod arangosh arangoimport arangoexport arangodump arangorestore arangobench fuertetest"
-      - compile-linux:
-          context:
-            - sccache-aws-bucket # add the environment variables to setup sccache for the S3 bucket
-          name: build-ce-non-maintainer
-          preset: community-pr-non-maintainer
-          edition: x64-community
-          enterprise: false
-          targets: "arangod arangosh arangoimport arangoexport arangodump arangorestore arangobench"
-          publish-artifacts: false
-  enterprise-pr:
-    jobs:
-      - compile-linux:
+      - compile-windows:
           context:
             - sccache-aws-bucket # add the environment variables to setup sccache for the S3 bucket
           name: build-ee
           preset: enterprise-pr
           edition: x64-enterprise
-          enterprise: true
-          targets: "arangodbtests arangod arangosh arangoimport arangoexport arangodump arangorestore arangobench fuertetest"
-          enterprise-targets: "arangobackup"
-      - compile-linux:
-          context:
-            - sccache-aws-bucket # add the environment variables to setup sccache for the S3 bucket
-          name: build-ee-non-maintainer
-          preset: enterprise-pr-non-maintainer
-          edition: x64-enterprise
-          enterprise: true
-          targets: "arangod arangosh arangoimport arangoexport arangodump arangorestore arangobench"
-          enterprise-targets: "arangobackup"
-          publish-artifacts: false
-      - run-hotbackup-tests:
-          name: run-hotbackup-tests
-          requires:
-            - build-ee
+          build-tests: true
