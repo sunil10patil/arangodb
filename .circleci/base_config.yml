@@ -263,7 +263,7 @@ jobs:
         default: true
     executor:
       name: win/default
-      size: 2xlarge
+      size: xlarge
       shell: bash.exe
       version: "2022.08.1"
     environment:
@@ -271,12 +271,6 @@ jobs:
       SCCACHE_ERROR_LOG: /tmp/sccache.log
       SCCACHE_LOG: info,sccache::cache=debug,sccache::compiler::compiler=debug
     steps:
-      - checkout-arangodb:
-          with-submodules: true
-          destination: "C:/root/project"
-      # for windows we build only enterprise, so we can check it out unconditionally
-      - checkout-enterprise:
-          destination: "C:/root/project/enterprise"
       # - run:
       #     name: Print SCCache Settings
       #     command: sccache -s
@@ -284,7 +278,18 @@ jobs:
           name: "Install CMake"
           shell: powershell.exe
           command: |
-            choco install cmake openssl -y
+            choco install cmake openssl imdisk -y
+      - run:
+          name: "Create RAM disk"
+          shell: powershell.exe
+          command: |
+            imdisk -a -s 25G -m X: -p "/fs:ntfs /q /y"
+      - checkout-arangodb:
+          with-submodules: true
+          destination: "X:/project"
+      # for windows we build only enterprise, so we can check it out unconditionally
+      - checkout-enterprise:
+          destination: "X:/project/enterprise"
       - run:
           name: "Configure"
           shell: powershell.exe
@@ -292,16 +297,21 @@ jobs:
             #docker info
             # TODO - use preset
             #docker run -v C:/root/project:C:/project -w C:/project arangodb/build-windows-x64:latest cmd.exe /c "mkdir build && cd build && cmake -G 'Visual Studio 17 2022' -T 'v143,host=x64' -DVERBOSE=On -DUSE_MAINTAINER_MODE=On -DUSE_GOOGLE_TESTS=On -DUSE_ENTERPRISE=Off -DCMAKE_BUILD_TYPE=RelWithDebInfo -DPACKAGING=NSIS -DCMAKE_INSTALL_PREFIX=/ -DSKIP_PACKAGING=On -DUSE_FAILURE_TESTS=On -DSTATIC_EXECUTABLES=On -DOPENSSL_USE_STATIC_LIBS=On -DUSE_STRICT_OPENSSL_VERSION=On .."
+            mkdir X:\temp
+            $env:TEMP = "X:\temp"
+            $env:TMP = "X:\temp"
             $env:Path += ";$env:ProgramFiles\CMake\bin"
-            cd C:/root/project
+            cd X:/project
             mkdir build; cd build
             cmake -G 'Visual Studio 17 2022' -T 'v143,host=x64' -DVERBOSE=On -DUSE_MAINTAINER_MODE=On -DUSE_GOOGLE_TESTS=On -DUSE_ENTERPRISE=Off -DCMAKE_BUILD_TYPE=RelWithDebInfo -DPACKAGING=NSIS -DCMAKE_INSTALL_PREFIX=/ -DSKIP_PACKAGING=On -DUSE_FAILURE_TESTS=On -DSTATIC_EXECUTABLES=On -DOPENSSL_USE_STATIC_LIBS=On -DUSE_STRICT_OPENSSL_VERSION=Off "-DOPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" ..
       - run:
           name: "Build"
           shell: powershell.exe
           command: |
+            $env:TEMP = "X:\temp"
+            $env:TMP = "X:\temp"
             $env:Path += ";$env:ProgramFiles\CMake\bin"
-            cd C:/root/project/build
+            cd X:/project/build
             cmake --build . --config `"RelWithDebInfo`" --parallel
 
       # - run:
