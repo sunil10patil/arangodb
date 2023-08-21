@@ -205,7 +205,7 @@ ResultT<ExecutionNumber> PregelFeature::startExecution(TRI_vocbase_t& vocbase,
   auto maybeGraphSerdeConfig =
       buildGraphSerdeConfig(vocbase, graphByCollections);
   if (!maybeGraphSerdeConfig.ok()) {
-    return maybeGraphByCollections.error();
+    return maybeGraphSerdeConfig.error();
   }
   auto graphSerdeConfig = maybeGraphSerdeConfig.get();
 
@@ -531,13 +531,16 @@ void PregelFeature::beginShutdown() {
   std::unique_lock guard{_mutex};
   _gcHandle.reset();
 
+  for (auto& it : _conductors) {
+    it.second.conductor->_shutdown = true;
+  }
+
   auto cs = _conductors;
   auto ws = _workers;
   guard.unlock();
 
   // cancel all conductors and workers
   for (auto& it : cs) {
-    it.second.conductor->_shutdown = true;
     it.second.conductor->cancel();
   }
   for (auto it : ws) {

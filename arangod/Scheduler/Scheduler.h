@@ -204,9 +204,10 @@ class Scheduler {
   }
 
  public:
-  // delay Future returns a future that will be fulfilled after the given
-  // duration requires scheduler If d is zero, the future is fulfilled
-  // immediately. Throws a logic error if delay was cancelled.
+  // delay Future. returns a future that will be fulfilled after the given
+  // duration expires. If d is zero or we cannot post the future
+  // to the scheduler, the future is fulfilled immediately.
+  // Throws a logic error if delay was cancelled.
   futures::Future<futures::Unit> delay(std::string_view name,
                                        clock::duration d) {
     if (d == clock::duration::zero()) {
@@ -220,6 +221,10 @@ class Scheduler {
                              [pr = std::move(p)](bool cancelled) mutable {
                                pr.setValue(cancelled);
                              });
+
+    if (item == nullptr) {
+      return futures::makeFuture();
+    }
 
     return std::move(f).thenValue([item = std::move(item)](bool cancelled) {
       if (cancelled) {
@@ -276,8 +281,23 @@ class Scheduler {
   virtual void toVelocyPack(velocypack::Builder&) const = 0;
   virtual QueueStatistics queueStatistics() const = 0;
 
+  virtual void trackCreateHandlerTask() noexcept = 0;
+  virtual void trackBeginOngoingLowPriorityTask() noexcept = 0;
+  virtual void trackEndOngoingLowPriorityTask() noexcept = 0;
+
+  virtual void trackQueueTimeViolation() = 0;
+  virtual void trackQueueItemSize(std::int64_t) noexcept = 0;
+
   /// @brief returns the last stored dequeue time [ms]
   virtual uint64_t getLastLowPriorityDequeueTime() const noexcept = 0;
+
+  /// @brief set the time it took for the last low prio item to be dequeued
+  /// (time between queuing and dequeing) [ms]
+  virtual void setLastLowPriorityDequeueTime(uint64_t time) noexcept = 0;
+
+  /// @brief get information about low prio queue:
+  virtual std::pair<uint64_t, uint64_t> getNumberLowPrioOngoingAndQueued()
+      const = 0;
 
   /// @brief approximate fill grade of the scheduler's queue (in %)
   virtual double approximateQueueFillGrade() const = 0;
@@ -289,7 +309,6 @@ class Scheduler {
   // ---------------------------------------------------------------------------
   // Start/Stop/IsRunning stuff
   // ---------------------------------------------------------------------------
- public:
   virtual bool start();
   virtual void shutdown();
 

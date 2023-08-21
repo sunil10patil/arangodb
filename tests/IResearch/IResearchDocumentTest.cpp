@@ -2603,18 +2603,20 @@ TEST_F(IResearchDocumentTest, test_rid_encoding) {
     EXPECT_TRUE(pkField);
     EXPECT_EQ(size, pkField->docs_count());
 
-    arangodb::iresearch::PrimaryKeysFilter<false> filters;
+    arangodb::iresearch::PrimaryKeysFilter<false> filters{
+        irs::IResourceManager::kNoop};
     EXPECT_TRUE(filters.empty());
     filters.emplace(arangodb::LocalDocumentId(rid));
     EXPECT_FALSE(filters.empty());
 
     // first execution
     {
-      auto prepared = static_cast<irs::filter&>(filters).prepare(*reader);
+      auto prepared =
+          static_cast<irs::filter&>(filters).prepare({.index = *reader});
       ASSERT_TRUE(prepared);
 
       for (auto& segment : *reader) {
-        auto docs = prepared->execute(segment);
+        auto docs = prepared->execute({.segment = segment});
         ASSERT_TRUE(docs);
         EXPECT_TRUE(docs->next());
         auto const id = docs->value();
@@ -2775,16 +2777,18 @@ TEST_F(IResearchDocumentTest, test_rid_filter) {
       EXPECT_TRUE(ridSlice.isNumber<uint64_t>());
 
       auto rid = ridSlice.getNumber<uint64_t>();
-      arangodb::iresearch::PrimaryKeysFilter<false> filters;
+      arangodb::iresearch::PrimaryKeysFilter<false> filters{
+          irs::IResourceManager::kNoop};
       EXPECT_TRUE(filters.empty());
       filters.emplace(arangodb::LocalDocumentId(rid));
       EXPECT_FALSE(filters.empty());
 
-      auto prepared = static_cast<irs::filter&>(filters).prepare(*store.reader);
+      auto prepared =
+          static_cast<irs::filter&>(filters).prepare({.index = *store.reader});
       ASSERT_TRUE(prepared);
 
       for (auto& segment : *store.reader) {
-        auto docs = prepared->execute(segment);
+        auto docs = prepared->execute({.segment = segment});
         ASSERT_TRUE(docs);
         EXPECT_TRUE(docs->next());
         auto const id = docs->value();

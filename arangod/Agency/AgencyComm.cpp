@@ -31,6 +31,7 @@
 #include "Basics/StringUtils.h"
 #include "Basics/ScopeGuard.h"
 #include "Basics/application-exit.h"
+#include "Basics/system-compiler.h"
 #include "Basics/system-functions.h"
 #include "Cluster/ClusterFeature.h"
 #include "Cluster/ServerState.h"
@@ -85,6 +86,14 @@ AgencyPrecondition::AgencyPrecondition(std::string const& key, Type t,
                                        VPackSlice const& s)
     : key(AgencyCommHelper::path(key)), type(t), empty(false), value(s) {}
 
+AgencyPrecondition::AgencyPrecondition(std::string const& key, Type t,
+                                       std::shared_ptr<VPackBuilder> b)
+    : key(AgencyCommHelper::path(key)),
+      type(t),
+      empty(false),
+      builder{std::move(b)},
+      value(builder->slice()) {}
+
 AgencyPrecondition::AgencyPrecondition(
     std::shared_ptr<cluster::paths::Path const> const& path, Type t,
     const velocypack::Slice& s)
@@ -93,6 +102,15 @@ AgencyPrecondition::AgencyPrecondition(
 AgencyPrecondition::AgencyPrecondition(
     std::shared_ptr<cluster::paths::Path const> const& path, Type t, bool e)
     : key(path->str()), type(t), empty(e) {}
+
+AgencyPrecondition::AgencyPrecondition(
+    std::shared_ptr<cluster::paths::Path const> const& path, Type t,
+    std::shared_ptr<VPackBuilder> b)
+    : key(path->str()),
+      type(t),
+      empty(false),
+      builder{std::move(b)},
+      value(builder->slice()) {}
 
 void AgencyPrecondition::toVelocyPack(VPackBuilder& builder) const {
   if (type != AgencyPrecondition::Type::NONE) {
@@ -1291,15 +1309,23 @@ bool AgencyComm::tryInitializeStructure() {
       builder.add(VPackValue("Databases"));
       {
         VPackObjectBuilder d(&builder);
-        builder.add(VPackValue("_system"));
+        builder.add(VPackValue(StaticStrings::SystemDatabase));
         {
           VPackObjectBuilder d2(&builder);
-          builder.add("name", VPackValue("_system"));
-          builder.add("id", VPackValue("1"));
-          builder.add("replicationVersion",
+          builder.add(StaticStrings::DatabaseName,
+                      VPackValue(StaticStrings::SystemDatabase));
+          builder.add(StaticStrings::DatabaseId, VPackValue("1"));
+          builder.add(StaticStrings::ReplicationVersion,
                       arangodb::replication::versionToString(
                           _server.getFeature<DatabaseFeature>()
                               .defaultReplicationVersion()));
+          // We need to also take care of the `cluster.force-one-shard` option
+          // here. If set, the entire cluster is forced to be a OneShard
+          // deployment.
+          if (_server.getFeature<ClusterFeature>().forceOneShard()) {
+            builder.add(StaticStrings::Sharding,
+                        VPackValue(StaticStrings::ShardingSingle));
+          }
         }
       }
       builder.add("Lock", VPackValue("UNLOCKED"));
@@ -1445,7 +1471,7 @@ bool AgencyComm::shouldInitializeStructure() {
       }
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    ADB_UNREACHABLE;
   }
 
   return false;

@@ -71,6 +71,7 @@
 #include "RestHandler/RestVocbaseBaseHandler.h"
 #include "RestServer/DatabaseFeature.h"
 #include "RestServer/SystemDatabaseFeature.h"
+#include "Scheduler/SchedulerFeature.h"
 #include "StorageEngine/EngineSelectorFeature.h"
 #include "StorageEngine/StorageEngine.h"
 #include "StorageEngine/TransactionState.h"
@@ -2534,7 +2535,6 @@ Result IResearchAnalyzerFeature::finalizeRemove(std::string_view name,
                          "configuration for arangosearch analyzer name '",
                          name, "'")};
   }
-  return {};
 }
 
 Result IResearchAnalyzerFeature::remove(std::string_view name,

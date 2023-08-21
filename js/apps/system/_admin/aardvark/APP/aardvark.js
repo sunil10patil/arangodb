@@ -96,7 +96,6 @@ router.get('/config.js', function (req, res) {
       maxReplicationFactor: internal.maxReplicationFactor,
       defaultReplicationFactor: internal.defaultReplicationFactor,
       maxNumberOfShards: internal.maxNumberOfShards,
-      maxNumberOfMoveShards: internal.maxNumberOfMoveShards,
       extendedNames: internal.extendedNames,
       forceOneShard: internal.forceOneShard,
       sessionTimeout: internal.sessionTimeout,
@@ -142,6 +141,7 @@ router.get('/api/*', module.context.apiDocumentation({
 authRouter.post('/query/profile', function (req, res) {
   const bindVars = req.body.bindVars;
   const query = req.body.query;
+  const options = req.body.options || {};
   let msg = null;
 
   try {
@@ -149,6 +149,7 @@ authRouter.post('/query/profile', function (req, res) {
       query,
       bindVars: bindVars || {},
       options: {
+        ...options,
         colors: false,
         profile: 2
       }
@@ -161,7 +162,8 @@ authRouter.post('/query/profile', function (req, res) {
 })
 .body(joi.object({
   query: joi.string().required(),
-  bindVars: joi.object().optional()
+  bindVars: joi.object().optional(),
+  options: joi.object().optional()
 }).required(), 'Query and bindVars to profile.')
 .summary('Explains a query')
 .description(dd`
@@ -172,6 +174,7 @@ authRouter.post('/query/explain', function (req, res) {
   const bindVars = req.body.bindVars || {};
   const query = req.body.query;
   const id = req.body.id;
+  const options = req.body.options || {};
   let msg = null;
 
   try {
@@ -179,7 +182,7 @@ authRouter.post('/query/explain', function (req, res) {
       query: query,
       bindVars: bindVars,
       id: id
-    }, {colors: false}, false);
+    }, {...options, colors: false}, false);
   } catch (e) {
     res.throw('bad request', e.message, {cause: e});
   }
@@ -189,6 +192,7 @@ authRouter.post('/query/explain', function (req, res) {
 .body(joi.object({
   query: joi.string().required(),
   bindVars: joi.object().optional(),
+  options: joi.object().optional(),
   batchSize: joi.number().optional(),
   id: joi.string().optional()
 }).required(), 'Query and bindVars to explain.')

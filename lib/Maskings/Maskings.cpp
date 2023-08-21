@@ -51,10 +51,6 @@
 using namespace arangodb;
 using namespace arangodb::maskings;
 
-namespace {
-std::string const xxxx("xxxx");
-}
-
 MaskingsResult Maskings::fromFile(std::string const& filename) {
   std::string definition;
 
@@ -204,9 +200,10 @@ bool Maskings::shouldDumpData(std::string const& name) {
   return false;
 }
 
-VPackValue Maskings::maskedItem(Collection& collection,
+VPackValue Maskings::maskedItem(Collection const& collection,
                                 std::vector<std::string>& path,
-                                std::string& buffer, VPackSlice const& data) {
+                                std::string& buffer,
+                                VPackSlice const& data) const {
   if (path.size() == 1 && path[0].size() >= 1 && path[0][0] == '_') {
     if (data.isString()) {
       velocypack::ValueLength length;
@@ -232,8 +229,6 @@ VPackValue Maskings::maskedItem(Collection& collection,
       return VPackValue(data.getInt());
     } else if (data.isDouble()) {
       return VPackValue(data.getDouble());
-    } else {
-      return VPackValue(VPackValueType::Null);
     }
   } else {
     if (data.isBool()) {
@@ -246,17 +241,15 @@ VPackValue Maskings::maskedItem(Collection& collection,
       return func->mask(data.getInt(), buffer);
     } else if (data.isDouble()) {
       return func->mask(data.getDouble(), buffer);
-    } else {
-      return VPackValue(VPackValueType::Null);
     }
   }
-
-  return VPackValue(xxxx);
+  return VPackValue(VPackValueType::Null);
 }
 
-void Maskings::addMaskedArray(Collection& collection, VPackBuilder& builder,
+void Maskings::addMaskedArray(Collection const& collection,
+                              VPackBuilder& builder,
                               std::vector<std::string>& path,
-                              VPackSlice const& data) {
+                              VPackSlice const& data) const {
   std::string buffer;
 
   for (VPackSlice entry : VPackArrayIterator(data)) {
@@ -272,9 +265,10 @@ void Maskings::addMaskedArray(Collection& collection, VPackBuilder& builder,
   }
 }
 
-void Maskings::addMaskedObject(Collection& collection, VPackBuilder& builder,
+void Maskings::addMaskedObject(Collection const& collection,
+                               VPackBuilder& builder,
                                std::vector<std::string>& path,
-                               VPackSlice const& data) {
+                               VPackSlice const& data) const {
   std::string buffer;
 
   for (auto const& entry : VPackObjectIterator(data, false)) {
@@ -297,8 +291,8 @@ void Maskings::addMaskedObject(Collection& collection, VPackBuilder& builder,
   }
 }
 
-void Maskings::addMasked(Collection& collection, VPackBuilder& builder,
-                         VPackSlice data) {
+void Maskings::addMasked(Collection const& collection, VPackBuilder& builder,
+                         VPackSlice data) const {
   if (!data.isObject()) {
     return;
   }
@@ -310,8 +304,8 @@ void Maskings::addMasked(Collection& collection, VPackBuilder& builder,
   addMaskedObject(collection, builder, path, data);
 }
 
-void Maskings::addMasked(Collection& collection, basics::StringBuffer& data,
-                         VPackSlice slice) {
+void Maskings::addMasked(Collection const& collection,
+                         basics::StringBuffer& data, VPackSlice slice) const {
   if (!slice.isObject()) {
     return;
   }
@@ -358,10 +352,10 @@ void Maskings::addMasked(Collection& collection, basics::StringBuffer& data,
 }
 
 void Maskings::mask(std::string const& name, basics::StringBuffer const& data,
-                    basics::StringBuffer& result) {
+                    basics::StringBuffer& result) const {
   result.clear();
 
-  Collection* collection;
+  Collection const* collection;
   auto const itr = _collections.find(name);
 
   if (itr == _collections.end()) {

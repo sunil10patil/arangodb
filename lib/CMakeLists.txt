@@ -72,6 +72,7 @@ add_library(arango_lightweight STATIC
         Basics/memory.cpp
         Basics/process-utils.cpp
         Basics/signals.cpp
+        Basics/SourceLocation.cpp
         Basics/system-functions.cpp
         Basics/tri-strings.cpp
         Containers/ImmerMemoryPolicy.h
@@ -177,7 +178,6 @@ add_library(arango STATIC
   Basics/ResourceUsage.cpp
   Basics/RocksDBLogger.cpp
   Basics/RocksDBUtils.cpp
-  Basics/SourceLocation.cpp
   Basics/StringBufferAdvanced.cpp
   Basics/Utf8Helper.cpp
   Basics/VelocyPackHelper.cpp
@@ -232,6 +232,7 @@ add_library(arango STATIC
 
 target_link_libraries(arango
   PUBLIC s2
+         arango_build_id
          boost_system
          boost_boost
          arango_futures
@@ -299,3 +300,4 @@ add_subdirectory(VelocypackUtils)
 add_subdirectory(CrashHandler)
 add_subdirectory(Assertions)
 add_subdirectory(Inspection)
+add_subdirectory(BuildId)
